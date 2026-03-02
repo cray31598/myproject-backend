@@ -14,8 +14,11 @@ function ensureDataDir(dbPath) {
   }
 }
 
-const resolvedPath = join(__dirname, config.database.path);
-ensureDataDir(resolvedPath);
+const rawPath = config.database.path;
+const resolvedPath = rawPath.startsWith('/') ? rawPath : join(__dirname, rawPath);
+if (!resolvedPath.startsWith('/tmp')) {
+  ensureDataDir(resolvedPath);
+}
 
 const sqlJsModule = await import('sql.js');
 const initSqlJs = sqlJsModule.default;
