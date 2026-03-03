@@ -11,7 +11,8 @@ const allowedOrigins = [
   'https://canditech.in',
   'https://www.canditech.in',
   'http://localhost:5173',
-  /^http:\/\/192\.168\.\d+\.\d+:5173$/,  // local network dev
+  /^http:\/\/192\.168\.\d+\.\d+:5173$/,   // local network
+  /^http:\/\/198\.18\.\d+\.\d+:5173$/,   // VPN/virtual network dev
   /^http:\/\/localhost(:\d+)?$/,
 ];
 app.use(cors({
