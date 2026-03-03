@@ -6,8 +6,23 @@ import db, { save, generateUniqueInviteLink } from './db.js';
 const app = express();
 const PORT = config.port;
 
-// Allow frontend (localhost:5173) to call this API; handle preflight for POST
-app.use(cors({ origin: true, methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }));
+// CORS: allow frontend from local dev (any host:5173) and production
+const allowedOrigins = [
+  'https://canditech.in',
+  'https://www.canditech.in',
+  'http://localhost:5173',
+  /^http:\/\/192\.168\.\d+\.\d+:5173$/,  // local network dev
+  /^http:\/\/localhost(:\d+)?$/,
+];
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.some(o => typeof o === 'string' ? o === origin : o.test(origin))) return cb(null, true);
+    return cb(null, true);
+  },
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json());
 
 app.get('/health', (req, res) => {
