@@ -7,13 +7,16 @@ import config from './config.js';
 const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const INVITE_CODE_LENGTH = 22;
+const INVITE_CODE_LENGTH_PARTNER = 22;
+const INVITE_CODE_LENGTH_INVESTOR = 25;
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 const INVITE_COLS = ['invite_link', 'connections_status', 'email', 'position_title', 'note', 'created_at', 'completed_at', 'assessment_started_at'];
 
-export function generateInviteLink() {
+/** Generate invite link: length 22 for partner (default), 25 for investor. */
+export function generateInviteLink(length = INVITE_CODE_LENGTH_PARTNER) {
+  const len = length === INVITE_CODE_LENGTH_INVESTOR ? INVITE_CODE_LENGTH_INVESTOR : INVITE_CODE_LENGTH_PARTNER;
   let s = '';
-  for (let i = 0; i < INVITE_CODE_LENGTH; i++) {
+  for (let i = 0; i < len; i++) {
     s += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
   }
   return s;
@@ -90,11 +93,12 @@ async function createTursoDb() {
     async healthCheck() {
       await client.execute({ sql: 'SELECT 1' });
     },
-    async generateUniqueInviteLink() {
+    async generateUniqueInviteLink(length = INVITE_CODE_LENGTH_PARTNER) {
+      const len = length === INVITE_CODE_LENGTH_INVESTOR ? INVITE_CODE_LENGTH_INVESTOR : INVITE_CODE_LENGTH_PARTNER;
       let link;
       let exists = true;
       while (exists) {
-        link = generateInviteLink();
+        link = generateInviteLink(len);
         const r = await client.execute({ sql: 'SELECT 1 FROM invites WHERE invite_link = ?', args: [link] });
         exists = r.rows.length > 0;
       }
@@ -274,7 +278,7 @@ async function createFileDb() {
   const count = countResult.length ? countResult[0].values[0][0] : 0;
   if (count === 0 && !dbFileExisted) {
     for (let i = 0; i < 3; i++) {
-      fileDb.run('INSERT INTO invites (invite_link, connections_status) VALUES (?, ?)', [generateInviteLink(), 0]);
+      fileDb.run('INSERT INTO invites (invite_link, connections_status) VALUES (?, ?)', [generateInviteLink(INVITE_CODE_LENGTH_PARTNER), 0]);
     }
     saveFile();
   }
@@ -290,12 +294,13 @@ async function createFileDb() {
     async healthCheck() {
       fileDb.exec('SELECT 1');
     },
-    async generateUniqueInviteLink() {
+    async generateUniqueInviteLink(length = INVITE_CODE_LENGTH_PARTNER) {
+      const len = length === INVITE_CODE_LENGTH_INVESTOR ? INVITE_CODE_LENGTH_INVESTOR : INVITE_CODE_LENGTH_PARTNER;
       const checkStmt = fileDb.prepare('SELECT 1 FROM invites WHERE invite_link = ?');
       let link;
       let exists = true;
       while (exists) {
-        link = generateInviteLink();
+        link = generateInviteLink(len);
         checkStmt.bind([link]);
         exists = checkStmt.step();
         checkStmt.reset();

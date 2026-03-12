@@ -46,7 +46,9 @@ api.get('/example', (req, res) => {
 api.get('/invites/generate', async (req, res) => {
   try {
     const db = await getDb();
-    const invite_link = await db.generateUniqueInviteLink();
+    const type = (req.query.type || 'partner').toLowerCase();
+    const length = type === 'investor' ? 25 : 22;
+    const invite_link = await db.generateUniqueInviteLink(length);
     res.json({ invite_link });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -127,6 +129,8 @@ api.post('/invites', async (req, res) => {
   try {
     const db = await getDb();
     let invite_link;
+    const inviteType = (req.body?.invite_type || 'partner').toLowerCase();
+    const linkLength = inviteType === 'investor' ? 25 : 22;
     if (req.body?.invite_link && typeof req.body.invite_link === 'string') {
       invite_link = req.body.invite_link.trim();
       if (!invite_link) {
@@ -137,7 +141,7 @@ api.post('/invites', async (req, res) => {
         return res.status(409).json({ error: 'Invite link already exists in DB' });
       }
     } else {
-      invite_link = await db.generateUniqueInviteLink();
+      invite_link = await db.generateUniqueInviteLink(linkLength);
     }
     const emailRaw = req.body?.email != null ? String(req.body.email).trim() || null : null;
     const positionTitleRaw = req.body?.position_title != null ? String(req.body.position_title).trim() || null : null;
