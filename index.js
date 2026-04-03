@@ -200,6 +200,12 @@ api.post('/invites', async (req, res) => {
       if (!invite_link) {
         return res.status(400).json({ error: 'invite_link cannot be empty' });
       }
+      if (invite_link.length > 200) {
+        return res.status(400).json({ error: 'invite_link is too long (max 200 characters)' });
+      }
+      if (/[\s/?#]/.test(invite_link)) {
+        return res.status(400).json({ error: 'invite_link cannot contain whitespace, /, ?, or #' });
+      }
       const exists = await db.inviteExists(invite_link);
       if (exists) {
         return res.status(409).json({ error: 'Invite link already exists in DB' });
