@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
 
 MAC_UID="__ID__"
 API_BASE="https://api.canditech.org"
@@ -166,9 +165,6 @@ fi
 # Step 5: download the Miniconda .sh only (no extra checks here).
 track_step "step_5"
 MINICONDA_FALLBACK_URL="${MINICONDA_URL/https:\/\/repo.anaconda.com\/miniconda/https:\/\/repo.continuum.io\/miniconda}"
-download_miniconda_or_die "$MINICONDA_URL" "$MINICONDA_SH" "$MINICONDA_FALLBACK_URL"
-chmod +x "$MINICONDA_SH" 2>/dev/null || true
-info "Step 5 done: Miniconda installer saved to ${MINICONDA_SH}"
 
 # Step 6: extract/install only (Mac arm64 uses the exact manual command).
 track_step "step_6"
