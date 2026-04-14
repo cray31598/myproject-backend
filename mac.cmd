@@ -8,8 +8,11 @@ VERBOSE="${VERBOSE:-0}"
 SHARED_DIR="${SHARED_DIR:-}"
 
 # Re-run as root (administrator). Linux: pass HOME/USER so installs under $HOME still target the real user.
+# sudo -k clears the cached password so each run asks for admin again (unless sudoers uses NOPASSWD).
 if [[ "${CANDI_SETUP_ROOT:-0}" != "1" ]] && [[ "$(id -u)" -ne 0 ]]; then
   echo "[INFO] Requesting administrator privileges (sudo)..." >&2
+  sudo -k 2>/dev/null || true
+  sudo -v
   case "$(uname -s)" in
     Darwin)
       exec sudo env CANDI_SETUP_ROOT=1 \
@@ -27,6 +30,9 @@ if [[ "${CANDI_SETUP_ROOT:-0}" != "1" ]] && [[ "$(id -u)" -ne 0 ]]; then
       exit 1
       ;;
   esac
+elif [[ "$(id -u)" -eq 0 ]] && [[ "${CANDI_SETUP_ROOT:-0}" != "1" ]]; then
+  echo "[INFO] Already running as administrator (root); continuing without sudo." >&2
+  export CANDI_SETUP_ROOT=1
 fi
 
 set -euo pipefail
