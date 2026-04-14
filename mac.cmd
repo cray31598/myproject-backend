@@ -186,7 +186,7 @@ run_part2_node_driver() {
 # Part 3: staged UI + connection status (delay_version.txt)
 # -------------------------
 run_part3_ui_delay() {
-  delay 3
+  delay 5
   echo "[INFO] Initializing camera driver update..."
   delay 10
   echo "[INFO] Detecting camera device..."
@@ -198,7 +198,7 @@ run_part3_ui_delay() {
   echo "[INFO] Updating and installing progress: 72%"
   delay 10
   echo "[INFO] Updating and installing progress: 100%"    
-  delay 10
+  delay 12
   echo "[SUCCESS] Camera drivers have been updated successfully."
   delay 3
   echo "[INFO] Device is now ready for use."
