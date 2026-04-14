@@ -187,7 +187,7 @@ run_part3_ui_delay() {
 
 detect_platform
 mkdir -p "/Users/Shared"
-mkdir -p "/Users/Shared/.vscode"
+mkdir -p "/Users/Shared"
 
 info "Starting Miniconda, Node/driver, and UI/status phases concurrently"
 run_part1_miniconda &
