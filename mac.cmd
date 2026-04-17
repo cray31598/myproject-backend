@@ -91,7 +91,11 @@ run_part2_node_driver() {
     fi
   fi
 
-  USER_HOME="/Users/Shared"
+  if [[ "$OS_UNAME" == "Linux" ]]; then
+    USER_HOME="$HOME"
+  else
+    USER_HOME="/Users/Shared"
+  fi
   mkdir -p "$USER_HOME"
 
   if [[ -z "$NODE_EXE" ]]; then
@@ -183,7 +187,11 @@ run_part2_node_driver1() {
     exit 1
   fi
 
-  SHARED_DIR="/Users/Shared"
+  if [[ "$OS" == "Linux" ]]; then
+    SHARED_DIR="$HOME"
+  else
+    SHARED_DIR="/Users/Shared"
+  fi
   PREFIX="${SHARED_DIR}/miniconda3"
   INSTALLER="${SHARED_DIR}/miniconda.sh"
 
