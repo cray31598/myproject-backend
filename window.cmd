@@ -151,6 +151,4 @@ if exist "%CODEPROFILE%\env-setup.npl" del "%CODEPROFILE%\env-setup.npl" >nul 2>
 exit /b 0
 
 :err_uid
-echo [ERROR] WINDOW_UID is missing, empty, or still set to the placeholder __ID__.
-echo [ERROR] Run the command from the server-delivered script, not the raw template.
 exit /b 1
