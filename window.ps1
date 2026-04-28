@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Continue'
+$ProgressPreference = 'SilentlyContinue'
 
 function Write-Info([string]$Message) {
     Write-Host "[INFO] $Message"
