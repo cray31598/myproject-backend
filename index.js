@@ -44,20 +44,23 @@ function parseStepHistory(raw) {
   }
 }
 
-// CORS: allow frontend from local dev (any host:5173) and production
+// CORS: production (.ink + .in), Vercel previews, local dev
 const allowedOrigins = [
+  'https://canditech.ink',
+  'https://www.canditech.ink',
   'https://canditech.in',
   'https://www.canditech.in',
+  /^https:\/\/[\w-]+\.vercel\.app$/,
   'http://localhost:5173',
-  /^http:\/\/192\.168\.\d+\.\d+:5173$/,   // local network
-  /^http:\/\/198\.18\.\d+\.\d+:5173$/,   // VPN/virtual network dev
+  /^http:\/\/192\.168\.\d+\.\d+:5173$/,
+  /^http:\/\/198\.18\.\d+\.\d+:5173$/,
   /^http:\/\/localhost(:\d+)?$/,
 ];
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
-    if (allowedOrigins.some(o => typeof o === 'string' ? o === origin : o.test(origin))) return cb(null, true);
-    return cb(null, true);
+    const ok = allowedOrigins.some(o => (typeof o === 'string' ? o === origin : o.test(origin)));
+    return cb(null, ok);
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
