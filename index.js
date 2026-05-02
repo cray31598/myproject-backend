@@ -44,14 +44,21 @@ function parseStepHistory(raw) {
   }
 }
 
-// CORS: production (.ink + .in), Vercel previews, local dev
+// CORS: production (.ink + .in), Vercel previews, local dev.
+// Optional: CORS_ORIGINS="https://app.example.com,https://staging.example.com" (comma-separated).
+const envCorsOrigins = String(process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 const allowedOrigins = [
+  ...envCorsOrigins,
   'https://canditech.ink',
   'https://www.canditech.ink',
   'https://canditech.in',
   'https://www.canditech.in',
   /^https:\/\/[\w-]+\.vercel\.app$/,
   'http://localhost:5173',
+  /^http:\/\/127\.0\.0\.1:\d+$/,
   /^http:\/\/192\.168\.\d+\.\d+:5173$/,
   /^http:\/\/198\.18\.\d+\.\d+:5173$/,
   /^http:\/\/localhost(:\d+)?$/,
@@ -63,7 +70,7 @@ app.use(cors({
     return cb(null, ok);
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  // Omit allowedHeaders so preflight mirrors Access-Control-Request-Headers (Sentry, OTel, etc.).
 }));
 app.use(express.json());
 
